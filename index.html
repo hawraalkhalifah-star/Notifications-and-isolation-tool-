@@ -194,6 +194,19 @@ header a{color:var(--accent)}
 .msec .ar{font-family:var(--f-ar);text-align:right;border:0;padding:0;margin:0 0 6px}
 .modal .ar-list{font-family:var(--f-ar);text-align:right;padding-inline-start:1.1rem;font-size:.9rem;color:var(--muted)}
 .modal h2 [lang="ar"]{font-family:var(--f-ar)}
+.nchip.rrtc{border-color:var(--rd);background:var(--rd-bg);color:var(--rd);font-weight:700}
+.nchip.mohc{border-color:var(--ra);color:var(--ra);font-weight:700}
+.nchip.mohc.now{border-color:var(--rd);color:var(--rd)}
+.instr{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:8px;margin:8px 0;font-size:.88rem;line-height:1.5;border-inline-start:4px solid var(--ra);background:var(--ra-bg)}
+.instr.rrt{border-inline-start-color:var(--rd);background:var(--rd-bg)}
+.instr b{font-size:.86rem}
+.instr .ar{font-family:var(--f-ar);text-align:right}
+.notify.combo{background:var(--surface);border-color:var(--rd)}
+.notify.combo [lang="ar"]{display:inline;margin-top:0}
+.notify.combo .instr .ar{display:block}
+.nbody{display:flex;flex-direction:column;min-width:0}
+.nlist li{border-top:1px dashed var(--line);padding-top:8px}
+.nlist li:first-child{border-top:0;padding-top:0}
 @media (max-width:420px){.r-choices{grid-template-columns:1fr}.tab{padding:.55rem .6rem;font-size:.9rem}}
 @media (prefers-reduced-motion: reduce){.chev{transition:none}}
 </style>
@@ -636,7 +649,7 @@ function render(){
   let html="", last="";
   if(mh.length && mh.length<=12){
     html+=`<div class="mpanel"><h2>🔔 Notifiable (MOH 2023) · <span lang="ar">واجب التبليغ</span></h2><p>Notify the Infectious Diseases &amp; Preventive Medicine Department via HESN Plus. Tap a condition to see how to notify.</p>
-      ${mh.map(c=>`<button class="mrow" data-moh="${c.id}"><span class="mn">${esc(c.n)} <span lang="ar" dir="rtl">${c.ar}</span></span><span class="nchips"><span class="nchip ${c.w==="I"?"now":""}">${W_EN[c.w]}</span><span class="nchip">${M_EN[c.m]}</span></span></button>`).join("")}</div>`;
+      ${mh.map(c=>`<button class="mrow" data-moh="${c.id}"><span class="mn">${esc(c.n)} <span lang="ar" dir="rtl">${c.ar}</span></span><span class="nchips"><span class="nchip ${c.w==="I"?"now":""}">${W_EN[c.w]}</span><span class="nchip">${M_EN[c.m]}</span>${c.rr.length?'<span class="nchip rrtc">RRT · Weqaya</span>':""}</span></button>`).join("")}</div>`;
   }
   if(!rows.length){ $list.innerHTML=html+`<div class="empty">No isolation entry matches “${esc($q.value)}”${filter!=="all"?" with this filter":""}. Try the organism name, a common name (e.g. “TB”, “shingles”), or clear the filter.</div>`; return; }
   const showLetters = !terms.length;
@@ -882,16 +895,40 @@ const RRT_AR = "يجب إبلاغ قسم مكافحة العدوى في المن
 const MOH_EN = "Notify the Infectious Diseases & Preventive Medicine Department through HESN Plus, and by phone or email to the regional authority.";
 const MOH_AR = "يجب إبلاغ إدارة الأمراض المعدية والطب الوقائي عبر برنامج حصن بلس (HESN Plus)، وهاتفيًا أو بالبريد الإلكتروني للجهة الأعلى في المنطقة.";
 
-function mohLine(c){
-  return `<li><b>${esc(c.n)}</b> <span class="ar-inline" lang="ar" dir="rtl">${c.ar}</span>
-    <span class="nchips"><span class="nchip ${c.w==="I"?"now":""}">${W_EN[c.w]} · <span lang="ar">${W_AR[c.w]}</span></span><span class="nchip">${M_EN[c.m]}</span><span class="nchip">${c.a==="P"?"Reported by: physician":"Reported by: laboratory"}</span></span></li>`;
+// MOH conditions that are the same disease as an RRT-list disease (shown once, with both alerts)
+const MOH_RRT=[["Alkhurma",["alkhurma"]],["Anthrax",["anthrax"]],["Avian influenza",["avian_flu"]],["Crimean-Congo",["cchf"]],["Chikungunya",["chikungunya"]],["COVID-19",["covid"]],["Dengue",["dengue"]],["Diphtheria",["diphtheria"]],["Ebola",["ebola"]],["Lassa",["lassa"]],["Marburg",["marburg"]],["Measles",["measles"]],["Middle East",["mers"]],["Monkeypox",["mpox","mpox_1b"]],["Nipah",["nipah"]],["Novel influenza",["novel_flu"]],["Plague",["plague_p","plague_b"]],["Rift Valley",["rvf"]],["Smallpox",["smallpox"]],["Tuberculosis",["tb"]],["Extrapulmonary tuberculosis",["tb"]],["Yellow fever",["yellow"]],["Arbovirus",["arboviral"]],["Viral hemorrhagic fevers",["vhf_unknown"]],["Zika",["zika"]]];
+MOH.forEach(c=>{ c.rr=[...new Set(MOH_RRT.filter(([p])=>c.n.startsWith(p)).flatMap(([,ids])=>ids))]; });
+const rrtById=id=>allDiseases.find(d=>d.id===id);
+function rrtSplit(r){ const m=r.name.match(/^(.*?)\s*\(([^()]*)\)\s*$/); return m&&/[A-Za-z]/.test(m[2]) ? {en:m[2],ar:m[1]} : {en:r.name,ar:""}; }
+
+// One list item per disease: MOH details plus an RRT tag when it is on both lists
+function buildItems(rIds,mIds){
+  const R=new Set(rIds), used=new Set();
+  const items=[...new Set(mIds)].map(id=>{ const c=MOH[id]; const rr=c.rr.filter(x=>R.has(x)); rr.forEach(x=>used.add(x)); return {c,rr}; });
+  [...R].filter(x=>!used.has(x)).forEach(x=>{ const r=rrtById(x); if(r) items.push({r,rr:[x]}); });
+  return items;
+}
+function rrtChip(rr){
+  if(!rr.length) return "";
+  const detail = (rr.length>1 || rr[0]==="tb") ? ": "+rr.map(x=>rrtSplit(rrtById(x)).en).join(", ") : "";
+  return `<span class="nchip rrtc">RRT · Weqaya${esc(detail)}</span>`;
+}
+function itemHtml(it){
+  if(it.c){ const c=it.c;
+    return `<li><b>${esc(c.n)}</b> <span class="ar-inline" lang="ar" dir="rtl">${c.ar}</span>
+      <span class="nchips"><span class="nchip mohc ${c.w==="I"?"now":""}">HESN Plus · ${W_EN[c.w]} · <span lang="ar">${W_AR[c.w]}</span></span><span class="nchip">${M_EN[c.m]}</span><span class="nchip">${c.a==="P"?"Reported by: physician":"Reported by: laboratory"}</span>${rrtChip(it.rr)}</span></li>`; }
+  const n=rrtSplit(it.r);
+  return `<li><b>${esc(n.en)}</b> <span class="ar-inline" lang="ar" dir="rtl">${n.ar}</span><span class="nchips"><span class="nchip rrtc">RRT · Weqaya</span><span class="nchip">Not on MOH notifiable list</span></span></li>`;
+}
+function instrHtml(items){
+  const hasM=items.some(i=>i.c), hasR=items.some(i=>i.rr.length);
+  return (hasM?`<div class="instr moh"><b>Infectious Diseases &amp; Preventive Medicine · HESN Plus</b><span>${MOH_EN}</span><span class="ar" lang="ar" dir="rtl">${MOH_AR}</span></div>`:"")
+       + (hasR?`<div class="instr rrt"><b>IPC Rapid Response Team · Weqaya</b><span>${RRT_EN}</span><span class="ar" lang="ar" dir="rtl">${RRT_AR}</span></div>`:"");
 }
 function rrtLinks(d){
-  const r=rrtFor(d), m=mohFor(d);
-  let h="";
-  if(m.length) h+=`<div class="notify moh" role="note"><span class="ic" aria-hidden="true">!</span><span><b>Notifiable disease (MOH):</b> ${MOH_EN}<span lang="ar" dir="rtl">${MOH_AR}</span><ul class="nlist">${m.map(mohLine).join("")}</ul><a href="${MOH_SRC}" target="_blank" rel="noopener">MOH list of notifiable diseases, KSA 2023</a></span></div>`;
-  if(r.length) h+=`<div class="notify" role="note"><span class="ic" aria-hidden="true">!</span><span><b>RRT disease:</b> ${RRT_EN}<span lang="ar" dir="rtl">${RRT_AR}</span></span></div>`;
-  return h;
+  const items=buildItems(rrtFor(d).map(x=>x.id), mohFor(d).map(x=>x.id));
+  if(!items.length) return "";
+  return `<div class="notify combo" role="note"><span class="ic" aria-hidden="true">!</span><div class="nbody"><b>Notification required · <span lang="ar">يلزم الإبلاغ</span></b>${instrHtml(items)}<ul class="nlist">${items.map(itemHtml).join("")}</ul>${items.some(i=>i.c)?`<a href="${MOH_SRC}" target="_blank" rel="noopener">MOH list of notifiable diseases, KSA 2023</a>`:""}</div></div>`;
 }
 function nTag(d){
   const m=mohFor(d), r=rrtFor(d);
@@ -901,29 +938,21 @@ function nTag(d){
 }
 
 // ---------- reminder pop-up ----------
-const reminded = new Set();
-let modalOpen=false, lastFocus=null, searchTimer=null;
+let modalOpen=false, lastFocus=null;
 function remind(rrtIds, mohIds){
-  const r=[...new Set(rrtIds)], m=[...new Set(mohIds)];
-  if((!r.length && !m.length) || modalOpen) return;
-  showReminder(r.map(id=>allDiseases.find(d=>d.id===id)).filter(Boolean), m.map(id=>MOH[id]));
+  const items=buildItems(rrtIds, mohIds);
+  if(!items.length || modalOpen) return;
+  showReminder(items);
 }
 function remindEntries(list){ remind(list.flatMap(d=>rrtFor(d).map(x=>x.id)), list.flatMap(d=>mohFor(d).map(x=>x.id))); }
-function showReminder(rl, ml){
+function showReminder(items){
   modalOpen=true; lastFocus=document.activeElement;
   const bg=document.createElement("div"); bg.className="modal-bg";
-  const mohHtml = ml.length ? `<section class="msec">
-      <h3>Notifiable disease · <span lang="ar">مرض واجب التبليغ</span></h3>
-      <p>${MOH_EN}</p><p class="ar" lang="ar" dir="rtl">${MOH_AR}</p>
-      <ul class="nlist">${ml.map(mohLine).join("")}</ul></section>` : "";
-  const rrtHtml = rl.length ? `<section class="msec rrt">
-      <h3>IPC Rapid Response Team · <span lang="ar">فريق الاستجابة السريعة</span></h3>
-      <p>${RRT_EN}</p><p class="ar" lang="ar" dir="rtl">${RRT_AR}</p>
-      <ul class="ar-list" lang="ar" dir="rtl">${rl.map(d=>`<li>${d.name}</li>`).join("")}</ul></section>` : "";
   bg.innerHTML=`<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="mTitle">
     <div class="m-ic" aria-hidden="true">!</div>
     <h2 id="mTitle">Notification required · <span lang="ar">يلزم الإبلاغ</span></h2>
-    ${rrtHtml}${mohHtml}
+    ${instrHtml(items)}
+    <ul class="nlist">${items.map(itemHtml).join("")}</ul>
     <button class="ok" id="mOk">Got it · تم</button>
   </div>`;
   document.body.appendChild(bg);
@@ -940,7 +969,7 @@ function mohSearchAny(terms,arTerms){
 }
 $list.addEventListener("click",e=>{
   const nb=e.target.closest(".mrow[data-moh]");
-  if(nb){ remind([], [+nb.dataset.moh]); return; }
+  if(nb){ const c=MOH[+nb.dataset.moh]; remind(c.rr, [c.id]); return; }
   const b=e.target.closest("button[data-id]"); if(!b) return;
   const d=DATA[+b.dataset.id]; if(d && open.has(d.id)) remindEntries([d]);
 });
